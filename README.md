@@ -1,3 +1,971 @@
+<!-- # TripVault - Software Requirements Specification (SRS)
+
+**Version:** 1.0
+**Date:** January 23, 2026
+**Author:** [Your Name]
+**Project Status:** Pre-Development (Design Phase)
+
+---
+
+## Table of Contents
+
+1. [Introduction](#1-introduction)
+2. [Overall Description](#2-overall-description)
+3. [System Features and Requirements](#3-system-features-and-requirements)
+4. [Technical Architecture](#4-technical-architecture)
+5. [Core Algorithms](#5-core-algorithms)
+6. [Security & Privacy](#6-security--privacy)
+7. [User Interface Specifications](#7-user-interface-specifications)
+8. [Development Plan](#8-development-plan)
+9. [Appendices](#9-appendices)
+
+---
+
+# 1. Introduction
+
+## 1.1 Purpose
+
+This Software Requirements Specification (SRS) document provides a comprehensive description of **TripVault**, a distributed cloud storage pooling platform designed for group travel scenarios. The document specifies all functional and non-functional requirements, system architecture, algorithms, and implementation details.
+
+**Target Audience:** Development team, technical reviewers, potential employers/interviewers, and future contributors.
+
+## 1.2 Document Conventions
+
+- **MUST/SHALL**: Mandatory requirements
+- **SHOULD**: Recommended but not mandatory
+- **MAY/CAN**: Optional features
+- **MVP**: Minimum Viable Product (Phase 1)
+- **Future**: Post-MVP enhancements (Phase 2+)
+
+## 1.3 Intended Audience
+
+This document is intended for:
+
+- **Software Engineers**: Implementation reference
+- **System Architects**: Design validation
+- **QA Engineers**: Test case development
+- **Product Managers**: Feature prioritization
+- **Interviewers/Recruiters**: Technical assessment
+
+## 1.4 Project Scope
+
+### In Scope (MVP):
+
+- Web-based application (desktop and mobile responsive)
+- Google Drive integration for distributed storage
+- Trip-based collaborative storage pooling
+- Adaptive file placement algorithm
+- User authentication via Google OAuth 2.0
+- File upload/download with deduplication
+- Real-time quota tracking
+- Storage analytics and insights
+
+### Out of Scope (MVP):
+
+- Native mobile applications (iOS/Android)
+- Multi-cloud support (OneDrive, Dropbox - Phase 2)
+- Multi-owner file chunking (Phase 2)
+- Payment processing/monetization
+- Video compression/transcoding
+- Peer-to-peer file transfer
+- Blockchain-based storage
+
+## 1.5 References
+
+- **Google Drive API Documentation**: https://developers.google.com/drive
+- **OAuth 2.0 Specification**: RFC 6749
+- **FastAPI Documentation**: https://fastapi.tiangolo.com
+- **Next.js Documentation**: https://nextjs.org
+- **PostgreSQL Documentation**: https://www.postgresql.org
+
+---
+
+# 2. Overall Description
+
+## 2.1 Product Perspective
+
+### Problem Statement
+
+During group trips, travelers face significant challenges in sharing and storing media:
+
+1. **Individual Storage Limits**: One person's cloud storage fills up quickly
+2. **Chaotic Sharing**: Files shared via WhatsApp (compressed quality), email (size limits), or multiple platforms
+3. **Fragmented Collections**: Photos scattered across different devices with no central repository
+4. **Duplicate Files**: Same content stored multiple times across different accounts
+5. **Access Barriers**: Group members without sufficient storage cannot receive all files
+6. **Manual Dependency**: Reliance on one person to collect and distribute all media
+
+### Existing Solutions - Gap Analysis
+
+| Solution                        | Limitation                                                     |
+| ------------------------------- | -------------------------------------------------------------- |
+| **Google Photos Shared Albums** | Compression, limited to photos only, no true pooling           |
+| **Google Drive Shared Folders** | Single owner's quota consumed, unfair burden                   |
+| **WhatsApp**                    | Severe compression, file size limits (2GB), expires after time |
+| **WeTransfer/Dropbox Transfer** | Temporary (7-30 days), not collaborative                       |
+| **Multi-cloud managers**        | Manual management, no automatic pooling                        |
+
+**Key Gap:** No solution pools storage contributions from multiple users into a unified virtual drive.
+
+### TripVault Solution
+
+TripVault decouples **who uploads** from **where files are stored**, creating a virtual shared drive backed by group members' individual cloud storage allocations.
+
+**Core Innovation:**
+
+```
+Traditional Model:
+  Uploader's Drive ← File is stored here (consumes their quota)
+
+TripVault Model:
+  Uploader → TripVault → Placement Algorithm → Selected Member's Drive
+  (File stored in optimal location regardless of who uploaded it)
+```
+
+## 2.2 Product Functions
+
+### Primary Functions:
+
+1. **Trip Management**
+   - Create trips with name, dates, description
+   - Invite members via email
+   - Archive/delete trips
+   - View trip statistics
+
+2. **Storage Pooling**
+   - Members allocate portion of their Google Drive storage
+   - Real-time pool capacity calculation
+   - Dynamic max file size limits
+   - Visual quota utilization dashboard
+
+3. **File Upload**
+   - Drag-and-drop or file picker interface
+   - Multi-file batch upload
+   - Client-side file validation
+   - Deduplication via hash checking
+   - Progress tracking with retry/failover
+
+4. **File Download**
+   - Unified gallery view (all trip files)
+   - Single-file or bulk download
+   - Streaming download (no server-side caching)
+   - File filtering by date, uploader, type
+
+5. **Adaptive Placement**
+   - Smart file placement based on size and member availability
+   - Balanced usage across members
+   - Automatic failover on upload failures
+
+6. **Analytics & Insights**
+   - Storage contribution tracking
+   - Upload activity metrics
+   - Member participation statistics
+
+## 2.3 User Classes and Characteristics
+
+### User Personas:
+
+#### Primary User: Trip Participant
+
+- **Age:** 18-45
+- **Tech Savvy:** Moderate (can use Google Drive, WhatsApp)
+- **Needs:** Easy photo sharing, reliable storage, no manual effort
+- **Pain Points:** Running out of storage, slow transfers, duplicate files
+- **Frequency:** 2-5 trips per year
+
+#### Secondary User: Trip Organizer
+
+- **Role:** Creates trip, manages invitations
+- **Tech Savvy:** High (comfortable with cloud services)
+- **Needs:** Centralized control, visibility into storage usage
+- **Pain Points:** Tracking who contributed, ensuring fairness
+
+## 2.4 Operating Environment
+
+### Client-Side:
+
+- **Platform:** Web browsers (Chrome, Firefox, Safari, Edge)
+- **Minimum Resolution:** 1024x768 (desktop), 375x667 (mobile)
+- **Internet:** Broadband connection (1 Mbps minimum for uploads)
+
+### Server-Side:
+
+- **Web Server:** Vercel (Next.js frontend)
+- **Application Server:** AWS EC2 / Railway (FastAPI backend)
+- **Database:** PostgreSQL 14+ (AWS RDS or Supabase)
+- **Queue:** Redis (for async upload processing)
+- **Storage:** Google Drive (user accounts via OAuth)
+
+### External Dependencies:
+
+- **Google Drive API** (v3)
+- **Google OAuth 2.0** (authentication)
+- **Google Cloud Platform** (API keys, quotas)
+
+## 2.5 Design and Implementation Constraints
+
+### Technical Constraints:
+
+1. **Google Drive API Rate Limits:**
+   - 20,000 queries per 100 seconds (per project)
+   - 1,000 queries per 100 seconds per user
+   - **Mitigation:** Request batching, queueing system
+
+2. **OAuth Token Management:**
+   - Refresh tokens expire after 6 months of inactivity
+   - **Mitigation:** Periodic token refresh, user re-authentication flow
+
+3. **File Size Limits:**
+   - Single-owner placement: Limited by largest member's available space
+   - **Mitigation:** Dynamic max file size calculation, user warnings
+
+4. **Storage Scope:**
+   - Files stored in `appDataFolder` (hidden from user's Drive UI)
+   - **Constraint:** User cannot manually backup/export files
+   - **Benefit:** Perfect isolation, prevents accidental deletion
+
+### Business Constraints:
+
+1. **Free Tier Only (MVP):**
+   - No payment processing
+   - Limited to 3 trips per user
+   - Max 10 members per trip
+
+2. **Google Drive Only:**
+   - No multi-cloud support in MVP
+   - Dependent on Google's API stability
+
+## 2.6 Assumptions and Dependencies
+
+### Assumptions:
+
+1. Users have active Google accounts with Drive enabled
+2. Users are willing to share portion of their cloud storage
+3. Average trip generates 10-50 GB of media content
+4. Most files are photos (5-20 MB) and videos (100 MB - 2 GB)
+5. Groups consist of 3-10 members
+
+### Dependencies:
+
+1. **Google APIs:** Availability and stability of Drive API
+2. **OAuth Service:** Google OAuth 2.0 authentication service
+3. **Third-Party Services:**
+   - Vercel (frontend hosting)
+   - Railway/AWS (backend hosting)
+   - PostgreSQL managed service
+4. **Browser APIs:** FileReader, Fetch API, Web Crypto API (for hashing)
+
+---
+
+# 3. System Features and Requirements
+
+## 3.1 Functional Requirements
+
+### FR-1: User Authentication
+
+- **FR-1.1** The system SHALL support Google OAuth 2.0 authentication
+- **FR-1.2** The system SHALL request only necessary OAuth scopes (`drive.appdata`, `drive.file`)
+- **FR-1.3** The system SHALL store encrypted OAuth tokens in the database
+- **FR-1.4** The system SHALL automatically refresh expired tokens
+- **FR-1.5** The system SHALL allow users to revoke access
+
+**Priority:** CRITICAL
+
+**Acceptance Criteria:**
+
+- User can log in with Google account in ≤3 clicks
+- OAuth consent screen shows only app-controlled folder access
+- Token refresh happens automatically without user intervention
+
+---
+
+### FR-2: Trip Management
+
+- **FR-2.1** Users SHALL be able to create trips with name, dates, and description
+- **FR-2.2** Trip owners SHALL be able to invite members via email
+- **FR-2.3** Invited members SHALL receive email notification with join link
+- **FR-2.4** Users SHALL be able to join multiple trips
+- **FR-2.5** Trip owners SHALL be able to archive or delete trips
+- **FR-2.6** Deleting a trip SHALL NOT delete files from members' Drives
+
+**Priority:** HIGH
+
+**Acceptance Criteria:**
+
+- Trip creation completes in ≤5 seconds
+- Email invitations sent within 1 minute
+- Users can view list of all their trips
+
+---
+
+### FR-3: Storage Allocation
+
+- **FR-3.1** Members SHALL specify how much storage they allocate to a trip (in GB)
+- **FR-3.2** The system SHALL validate allocation against real available Drive space
+- **FR-3.3** The system SHALL calculate total pool capacity (sum of allocations)
+- **FR-3.4** The system SHALL display current pool usage in real-time
+- **FR-3.5** Members SHALL be able to modify their allocation at any time
+- **FR-3.6** Reducing allocation below current usage SHALL be prevented
+
+**Priority:** CRITICAL
+
+**Acceptance Criteria:**
+
+- Allocation UI shows current Drive free space
+- Pool capacity updates within 5 seconds of allocation change
+- Visual progress bar shows pool utilization percentage
+
+---
+
+### FR-4: File Upload
+
+- **FR-4.1** Users SHALL be able to upload files via drag-and-drop or file picker
+- **FR-4.2** The system SHALL support batch upload (multiple files at once)
+- **FR-4.3** The system SHALL calculate SHA-256 hash for deduplication
+- **FR-4.4** Duplicate files SHALL NOT be uploaded (link to existing file instead)
+- **FR-4.5** The system SHALL display dynamic max file size limit before upload
+- **FR-4.6** Files exceeding max size SHALL be rejected with clear error message
+- **FR-4.7** The system SHALL show upload progress percentage
+- **FR-4.8** Failed uploads SHALL retry once, then auto-failover to backup member
+
+**Priority:** CRITICAL
+
+**Acceptance Criteria:**
+
+- Upload UI accepts images, videos, and documents
+- Deduplication check completes in ≤2 seconds
+- Progress bar updates at least every second
+- Retry/failover happens automatically without user intervention
+
+---
+
+### FR-5: File Placement Algorithm
+
+- **FR-5.1** The system SHALL implement adaptive placement based on file size
+- **FR-5.2** Small files (<100 MB) SHALL use balanced round-robin strategy
+- **FR-5.3** Medium files (100 MB - 1 GB) SHALL use balanced best-fit strategy
+- **FR-5.4** Large files (>1 GB) SHALL use least-used-first strategy
+- **FR-5.5** Placement SHALL consider usage ratio for fairness
+- **FR-5.6** Tie-breaking SHALL use least-recently-used (LRU) member
+- **FR-5.7** The system SHALL implement optimistic locking to prevent race conditions
+
+**Priority:** CRITICAL
+
+**Acceptance Criteria:**
+
+- Placement decision completes in ≤500ms
+- Storage usage balanced within ±10% across members
+- Concurrent uploads never exceed member quotas
+
+---
+
+### FR-6: File Download
+
+- **FR-6.1** Users SHALL see unified gallery of all trip files
+- **FR-6.2** Files SHALL be downloadable individually or in bulk
+- **FR-6.3** The system SHALL stream files (no server-side caching)
+- **FR-6.4** Downloads SHALL support resumable transfers
+- **FR-6.5** Gallery SHALL support filtering by date, uploader, and file type
+- **FR-6.6** Gallery SHALL display file thumbnails for images/videos
+
+**Priority:** HIGH
+
+**Acceptance Criteria:**
+
+- Gallery loads within 3 seconds for trips with ≤500 files
+- Bulk download packages files as ZIP
+- Download speed matches Google Drive native speeds (within 10%)
+
+---
+
+### FR-7: Quota Management
+
+- **FR-7.1** The system SHALL sync real Drive quotas every 6 hours
+- **FR-7.2** The system SHALL reserve space during upload (prevent over-allocation)
+- **FR-7.3** Reserved space SHALL be released on upload completion or failure
+- **FR-7.4** The system SHALL warn if member's real free space < allocated
+- **FR-7.5** The system SHALL prevent placement to members with insufficient real space
+
+**Priority:** HIGH
+
+**Acceptance Criteria:**
+
+- Quota sync completes within 30 seconds per member
+- Reserved space never causes quota overflow
+- Warnings shown within 1 hour of detection
+
+---
+
+## 3.2 Non-Functional Requirements
+
+### NFR-1: Performance
+
+**NFR-1.1 Response Time:**
+
+- Page load: ≤2 seconds (initial), ≤1 second (subsequent)
+- API endpoints: ≤500ms (p95), ≤200ms (p50)
+- File upload: Match Google Drive native speeds (±10%)
+- Gallery load: ≤3 seconds for 500 files
+
+**NFR-1.2 Throughput:**
+
+- Support 100 concurrent uploads
+- Handle 1,000 daily active users (MVP)
+- Process 10,000 files per day
+
+**NFR-1.3 Scalability:**
+
+- Horizontal scaling for backend
+- Database connection pooling (max 100 connections)
+- CDN for static assets
+
+---
+
+### NFR-2: Reliability
+
+**NFR-2.1 Availability:**
+
+- Target: 99% uptime (MVP)
+- Planned downtime: <1 hour/month
+- Graceful degradation during Google Drive API outages
+
+**NFR-2.2 Data Integrity:**
+
+- Zero data loss (files stored in user Drives)
+- Database backups: Daily (retained 30 days)
+- Transaction ACID compliance
+
+**NFR-2.3 Error Handling:**
+
+- All errors logged with context
+- User-friendly error messages
+- Automatic retry for transient failures
+
+---
+
+### NFR-3: Security
+
+**NFR-3.1 Authentication:**
+
+- OAuth 2.0 only (no password storage)
+- Session timeout: 7 days (extend on activity)
+- Secure token storage (encrypted at rest)
+
+**NFR-3.2 Authorization:**
+
+- Users can only access trips they're members of
+- File access restricted to trip members
+- API endpoints require valid session
+
+**NFR-3.3 Data Protection:**
+
+- All data in transit encrypted (HTTPS/TLS 1.2+)
+- OAuth tokens encrypted with AES-256
+- No plaintext sensitive data in logs
+
+**NFR-3.4 Privacy:**
+
+- Files stored in user-controlled Drives (not TripVault servers)
+- Minimal data collection (email, name, storage usage)
+- GDPR-compliant data deletion
+
+---
+
+### NFR-4: Usability
+
+**NFR-4.1 Learnability:**
+
+- New users complete first upload in ≤5 minutes
+- Optional onboarding tutorial
+- Contextual help tooltips
+
+**NFR-4.2 Efficiency:**
+
+- Power users complete common tasks in ≤3 clicks
+- Keyboard shortcuts for frequent actions
+- Batch operations (upload/download multiple files)
+
+**NFR-4.3 Satisfaction:**
+
+- Clean, modern UI design
+- Consistent visual language
+- Loading indicators for all async operations
+
+---
+
+# 4. Technical Architecture
+
+## 4.1 System Architecture
+
+### High-Level Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│                   USER LAYER                        │
+│  Desktop Browser | Tablet Browser | Mobile Browser  │
+└──────────────────────┬──────────────────────────────┘
+                       │ HTTPS
+                       ▼
+┌─────────────────────────────────────────────────────┐
+│              PRESENTATION LAYER                      │
+│         Next.js Frontend (Vercel)                   │
+│  • React Components                                 │
+│  • Server-Side Rendering (SSR)                      │
+│  • API Routes                                       │
+└──────────────────────┬──────────────────────────────┘
+                       │ REST API
+                       ▼
+┌─────────────────────────────────────────────────────┐
+│            APPLICATION LAYER                         │
+│       FastAPI Backend (AWS EC2/Railway)             │
+│  ┌─────────────────────────────────────────────┐   │
+│  │ Business Logic:                             │   │
+│  │  • Placement Algorithm                      │   │
+│  │  • Deduplication Engine                     │   │
+│  │  • Quota Manager                            │   │
+│  │  • Retry/Failover Handler                   │   │
+│  └─────────────────────────────────────────────┘   │
+└──────────────┬──────────────────┬───────────────────┘
+               │                  │
+               ▼                  ▼
+┌──────────────────┐    ┌──────────────────┐
+│   PostgreSQL     │    │   Redis Queue    │
+│   (Metadata)     │    │   (Async Jobs)   │
+└──────────────────┘    └──────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────────────────────┐
+│              STORAGE LAYER                           │
+│  User A's Drive | User B's Drive | User C's Drive   │
+│  (appDataFolder - Hidden from user UI)              │
+└─────────────────────────────────────────────────────┘
+```
+
+### Data Flow - Upload Sequence
+
+```
+1. Frontend Validation
+   ↓
+2. Backend API Endpoint (/files/upload)
+   ↓
+3. Deduplication Check (hash lookup)
+   ↓
+4. Placement Algorithm (select member)
+   ↓
+5. Quota Reservation (optimistic lock)
+   ↓
+6. Upload to Google Drive
+   ↓
+7a. Success → Commit Metadata
+7b. Failure → Retry → Failover
+```
+
+---
+
+## 4.2 Technology Stack
+
+### Frontend Stack
+
+| Technology   | Version | Purpose                        |
+| ------------ | ------- | ------------------------------ |
+| Next.js      | 14+     | React framework (SSR, routing) |
+| React        | 18+     | UI component library           |
+| TypeScript   | 5+      | Type-safe JavaScript           |
+| Tailwind CSS | 3+      | Utility-first CSS              |
+| Axios        | Latest  | HTTP client                    |
+| React Query  | 5+      | Server state management        |
+| crypto-js    | Latest  | SHA-256 hashing                |
+
+### Backend Stack
+
+| Technology               | Version | Purpose              |
+| ------------------------ | ------- | -------------------- |
+| Python                   | 3.11+   | Programming language |
+| FastAPI                  | 0.109+  | Web framework        |
+| SQLAlchemy               | 2+      | ORM                  |
+| Alembic                  | Latest  | Database migrations  |
+| google-auth              | Latest  | OAuth 2.0 client     |
+| google-api-python-client | Latest  | Drive API            |
+| cryptography             | Latest  | Token encryption     |
+| Redis                    | 7+      | Queue and caching    |
+| Celery                   | 5+      | Async task queue     |
+
+### Database
+
+| Technology | Version | Purpose             |
+| ---------- | ------- | ------------------- |
+| PostgreSQL | 14+     | Relational database |
+| pgBouncer  | Latest  | Connection pooling  |
+
+### Infrastructure
+
+| Service          | Provider         | Purpose            |
+| ---------------- | ---------------- | ------------------ |
+| Frontend Hosting | Vercel           | Next.js deployment |
+| Backend Hosting  | AWS EC2/Railway  | FastAPI deployment |
+| Database         | AWS RDS/Supabase | Managed PostgreSQL |
+| Storage          | Google Drive     | User file storage  |
+| Domain           | Cloudflare       | DNS + CDN          |
+
+---
+
+## 4.3 Database Design
+
+### Entity-Relationship Overview
+
+```
+User (1) ──── (N) TripMember (N) ──── (1) Trip
+                    │
+                    │ (1)
+                    │
+                    ▼ (N)
+                FileChunk ──── (N) VirtualFile (1)
+```
+
+### Table Schemas
+
+#### Users Table
+
+```sql
+CREATE TABLE users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email VARCHAR(255) UNIQUE NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    provider VARCHAR(50) DEFAULT 'google',
+    profile_picture_url TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_users_email ON users(email);
+```
+
+#### Trips Table
+
+```sql
+CREATE TABLE trips (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    owner_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    start_date DATE,
+    end_date DATE,
+    status VARCHAR(50) DEFAULT 'active', -- active, archived, deleted
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_trips_owner ON trips(owner_user_id);
+CREATE INDEX idx_trips_status ON trips(status);
+```
+
+#### TripMembers Table
+
+```sql
+CREATE TABLE trip_members (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    trip_id UUID NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    allocated_limit_bytes BIGINT NOT NULL DEFAULT 0,
+    used_bytes BIGINT NOT NULL DEFAULT 0,
+    reserved_bytes BIGINT NOT NULL DEFAULT 0,
+    real_free_bytes BIGINT,
+    last_quota_sync TIMESTAMP,
+    last_used_at TIMESTAMP,
+    status VARCHAR(50) DEFAULT 'active', -- active, revoked, left
+    joined_at TIMESTAMP DEFAULT NOW(),
+
+    UNIQUE(trip_id, user_id),
+    CONSTRAINT check_quota CHECK (used_bytes + reserved_bytes <= allocated_limit_bytes)
+);
+
+CREATE INDEX idx_tripmembers_trip ON trip_members(trip_id);
+CREATE INDEX idx_tripmembers_user ON trip_members(user_id);
+```
+
+#### VirtualFiles Table
+
+```sql
+CREATE TABLE virtual_files (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    trip_id UUID NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+    filename VARCHAR(500) NOT NULL,
+    original_name VARCHAR(500) NOT NULL,
+    total_size BIGINT NOT NULL,
+    mime_type VARCHAR(100),
+    hash VARCHAR(64) NOT NULL, -- SHA-256
+    uploader_user_id UUID NOT NULL REFERENCES users(id),
+    status VARCHAR(50) DEFAULT 'complete', -- uploading, complete, failed
+    uploaded_at TIMESTAMP DEFAULT NOW(),
+
+    UNIQUE(trip_id, hash)
+);
+
+CREATE INDEX idx_virtualfiles_trip ON virtual_files(trip_id);
+CREATE INDEX idx_virtualfiles_hash ON virtual_files(trip_id, hash);
+CREATE INDEX idx_virtualfiles_uploaded ON virtual_files(uploaded_at DESC);
+```
+
+#### FileChunks Table
+
+```sql
+CREATE TABLE file_chunks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    virtual_file_id UUID NOT NULL REFERENCES virtual_files(id) ON DELETE CASCADE,
+    owner_user_id UUID NOT NULL REFERENCES users(id),
+    cloud_file_id VARCHAR(255) NOT NULL, -- Google Drive file ID
+    chunk_index INTEGER NOT NULL DEFAULT 0,
+    chunk_size BIGINT NOT NULL,
+    status VARCHAR(50) DEFAULT 'stored', -- stored, deleted
+    created_at TIMESTAMP DEFAULT NOW(),
+
+    UNIQUE(virtual_file_id, chunk_index)
+);
+
+CREATE INDEX idx_filechunks_virtualfile ON file_chunks(virtual_file_id);
+CREATE INDEX idx_filechunks_owner ON file_chunks(owner_user_id);
+```
+
+#### UserCredentials Table (Encrypted)
+
+```sql
+CREATE TABLE user_credentials (
+    user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    encrypted_access_token TEXT NOT NULL,
+    encrypted_refresh_token TEXT NOT NULL,
+    token_expires_at TIMESTAMP NOT NULL,
+    scope TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+---
+
+## 4.4 API Design
+
+### Base URL
+
+```
+https://api.tripvault.com/v1
+```
+
+### Authentication
+
+All endpoints (except `/auth/*`) require:
+
+```
+Authorization: Bearer {jwt_token}
+```
+
+### Standard Response Format
+
+**Success:**
+
+```json
+{
+  "success": true,
+  "data": { ... },
+  "message": "Operation successful",
+  "timestamp": "2026-01-23T10:30:00Z"
+}
+```
+
+**Error:**
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "FILE_TOO_LARGE",
+    "message": "File exceeds maximum allowed size",
+    "details": { ... }
+  },
+  "timestamp": "2026-01-23T10:30:00Z"
+}
+```
+
+### Key Endpoints
+
+#### Authentication
+
+```
+POST /auth/google
+POST /auth/callback
+POST /auth/logout
+```
+
+#### Trips
+
+```
+GET    /trips
+POST   /trips
+GET    /trips/{trip_id}
+PATCH  /trips/{trip_id}
+DELETE /trips/{trip_id}
+```
+
+#### Trip Members
+
+```
+POST   /trips/{trip_id}/members/invite
+POST   /trips/{trip_id}/members/join
+PATCH  /trips/{trip_id}/members/me/allocation
+DELETE /trips/{trip_id}/members/me
+```
+
+#### Files
+
+```
+GET    /trips/{trip_id}/files
+POST   /trips/{trip_id}/files/upload
+GET    /trips/{trip_id}/files/{file_id}
+GET    /trips/{trip_id}/files/{file_id}/download
+DELETE /trips/{trip_id}/files/{file_id}
+```
+
+#### Utility
+
+```
+GET  /trips/{trip_id}/upload-limits
+POST /trips/{trip_id}/files/validate
+```
+
+### Error Codes
+
+| HTTP | Error Code           | Description             |
+| ---- | -------------------- | ----------------------- |
+| 400  | INVALID_REQUEST      | Malformed request       |
+| 400  | FILE_TOO_LARGE       | File exceeds max size   |
+| 401  | UNAUTHORIZED         | Invalid auth token      |
+| 403  | FORBIDDEN            | Not trip member         |
+| 404  | TRIP_NOT_FOUND       | Trip doesn't exist      |
+| 409  | DUPLICATE_FILE       | File already uploaded   |
+| 429  | RATE_LIMIT_EXCEEDED  | Too many requests       |
+| 500  | INTERNAL_ERROR       | Server error            |
+| 507  | INSUFFICIENT_STORAGE | Pool capacity exhausted |
+
+---
+
+# 5. Core Algorithms
+
+## 5.1 Adaptive Placement Algorithm
+
+### Algorithm Overview
+
+The placement algorithm determines which trip member's Google Drive should store each uploaded file. It adapts strategy based on file size to balance fairness, efficiency, and support for large files.
+
+### Algorithm Specification
+
+```
+ALGORITHM: Adaptive Balanced Placement
+
+INPUT:
+  - file_size: integer (bytes)
+  - trip_members: list of TripMember objects
+
+OUTPUT:
+  - selected_member: TripMember
+  - OR error: PlacementError
+
+STEP 1: Filter Candidates
+──────────────────────────
+FOR EACH member IN trip_members:
+  IF member.status != 'active':
+    CONTINUE
+
+  available = member.allocated_limit_bytes
+              - member.used_bytes
+              - member.reserved_bytes
+
+  IF member.real_free_bytes IS NOT NULL:
+    available = MIN(available, member.real_free_bytes)
+
+  IF available >= file_size:
+    candidates.APPEND(member)
+
+IF candidates.LENGTH == 0:
+  RETURN error("No space available")
+
+STEP 2: Categorize File & Select Strategy
+──────────────────────────────────────────
+IF file_size < 100 MB:
+  strategy = "BALANCED_ROUND_ROBIN"
+ELSE IF file_size < 1 GB:
+  strategy = "BALANCED_BEST_FIT"
+ELSE:
+  strategy = "LEAST_USED_FIRST"
+
+STEP 3: Apply Strategy
+──────────────────────
+CASE "BALANCED_ROUND_ROBIN":
+  # For small files, prioritize member with lowest usage ratio
+  min_ratio = MIN(member.used / member.allocated FOR member IN candidates)
+  tied = [m FOR m IN candidates WHERE m.usage_ratio == min_ratio]
+  selected = member WITH oldest last_used_at FROM tied
+
+CASE "BALANCED_BEST_FIT":
+  # For medium files, balance fairness (60%) + efficiency (40%)
+  max_available = MAX(member.available FOR member IN candidates)
+
+  FOR EACH candidate:
+    balance_score = 1 - (candidate.used / candidate.allocated)
+    efficiency_score = candidate.available / max_available
+    candidate.score = (0.6 × balance_score) + (0.4 × efficiency_score)
+
+  selected = candidate WITH MAX(score)
+
+CASE "LEAST_USED_FIRST":
+  # For large files, prioritize balance (70%) + capacity (30%)
+  FOR EACH candidate:
+    balance_score = 1 - (candidate.used / candidate.allocated)
+    capacity_score = candidate.available / file_size
+    candidate.score = (0.7 × balance_score) + (0.3 × capacity_score)
+
+  selected = candidate WITH MAX(score)
+
+STEP 4: Reserve Space (Optimistic Lock)
+───────────────────────────────────────
+BEGIN TRANSACTION:
+  current_available = selected.allocated - selected.used - selected.reserved
+
+  IF current_available < file_size:
+    ROLLBACK
+    RETRY from STEP 1
+
+  UPDATE trip_members
+  SET reserved_bytes = reserved_bytes + file_size,
+      last_used_at = NOW()
+  WHERE id = selected.id
+
+COMMIT
+
+STEP 5: Return
+──────────────
+RETURN selected
+```
+
+### Example Walkthrough
+
+**Scenario:**
+
+```
+Trip Members:
+- Alice: 5 GB allocated, 1 GB used (20% usage)
+- Bob:   5 GB allocated, 2 GB used (40% usage)
+- Carol: 5 GB allocated, 3 GB used (60% usage)
+
+Upload: 500 MB video (Medium file)
+```
+
+**Execution:**
+
+```
+STEP 1: Filter
+Alice: 4 GB available ✅
+Bob:
+``` -->
+
 # 🚀 TripVault - Complete Software Requirements Specification
 
 <div align="center">

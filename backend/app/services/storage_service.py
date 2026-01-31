@@ -5,6 +5,8 @@ from typing import List, Tuple
 from app.models.trip_member import TripMember
 from app.models.virtual_file import VirtualFile
 from app.models.file_chunk import FileChunk
+from app.models.user_cloud_account import UserCloudAccount
+from app.services.google_drive_service import get_drive_client, ensure_app_folder, upload_chunk_to_drive
 
 
 # =========================
@@ -198,3 +200,65 @@ def iter_virtual_file_bytes(
     for chunk in chunks:
         # MOCK: simulate chunk bytes
         yield b"\x00" * chunk.size_bytes
+
+
+def upload_chunks_to_google_drive(
+    *,
+    db: Session,
+    virtual_file_id: str,
+):
+    """
+    Uploads all chunks of a VirtualFile to the respective
+    owners' Google Drives and updates provider_file_id.
+    """
+
+    virtual_file = db.get(VirtualFile, virtual_file_id)
+    if not virtual_file:
+        raise FileNotFoundError("Virtual file not found")
+
+    chunks = (
+        db.execute(
+            select(FileChunk)
+            .where(FileChunk.virtual_file_id == virtual_file_id)
+            .order_by(FileChunk.offset_bytes)
+        )
+        .scalars()
+        .all()
+    )
+
+    for chunk in chunks:
+        # 1. Get owner's Google account
+        account = (
+            db.query(UserCloudAccount)
+            .filter(
+                UserCloudAccount.user_id == chunk.owner_user_id,
+                UserCloudAccount.provider == "google_drive",
+            )
+            .first()
+        )
+
+        if not account:
+            raise Exception(f"User {chunk.owner_user_id} has no Google Drive linked")
+
+        # 2. Drive client + app folder
+        drive = get_drive_client(account)
+        folder_id = ensure_app_folder(drive)
+
+        # 3. Generate fake data (for now)
+        data = b"\x01" * chunk.size_bytes
+
+        chunk_name = f"chunk_{virtual_file.id}_{chunk.offset_bytes}.bin"
+
+        # 4. Upload
+        provider_file_id = upload_chunk_to_drive(
+            drive,
+            folder_id=folder_id,
+            chunk_name=chunk_name,
+            data=data,
+        )
+
+        # 5. Update DB
+        chunk.provider = "google_drive"
+        chunk.provider_file_id = provider_file_id
+
+    db.commit()

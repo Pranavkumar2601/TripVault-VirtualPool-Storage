@@ -12,6 +12,7 @@ from app.services.storage_service import (
 
 from fastapi.responses import StreamingResponse
 from app.services.storage_service import iter_virtual_file_bytes
+from app.services.storage_service import upload_chunks_to_google_drive
 
 router = APIRouter(prefix="/files", tags=["files"])
 
@@ -91,3 +92,23 @@ def download_file(
 
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+
+# =========================
+# Google Drive Upload API
+# =======================
+@router.post("/{virtual_file_id}/upload_to_drive")
+def upload_file_to_drive(
+    virtual_file_id:str,
+    db:Session =Depends(get_db),
+
+):
+    Virtual_file_id = virtual_file_id.strip()
+
+    upload_chunks_to_google_drive(
+        db=db,
+        virtual_file_id=virtual_file_id,
+    )
+
+    return {"message":"File uploaded to Google Drive successfully"}
