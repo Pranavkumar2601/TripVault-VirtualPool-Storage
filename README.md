@@ -988,8 +988,8 @@ _Share trip memories without storage limits_
 | --------------------- | ------------------------------ |
 | **Document Version**  | 1.0                            |
 | **Last Updated**      | January 23, 2026               |
-| **Author**            | [Your Name]                    |
-| **Project Status**    | Pre-Development (Design Phase) |
+| **Author**            | Pranav Kumar                    |
+| **Project Status**    | Development (Design Phase) |
 | **Target Completion** | Q2 2026 (8-10 weeks)           |
 
 ---
