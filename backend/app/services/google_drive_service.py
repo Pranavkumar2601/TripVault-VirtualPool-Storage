@@ -1,10 +1,10 @@
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaInMemoryUpload
-
+from googleapiclient.http import MediaInMemoryUpload, MediaIoBaseDownload
 
 from app.models.user_cloud_account import UserCloudAccount
 
+import io
 
 def get_drive_client(account: UserCloudAccount):
     creds = Credentials(
@@ -80,3 +80,22 @@ def upload_chunk_to_drive(
     ).execute()
 
     return file["id"]
+
+def download_chunk_from_drive(drive, provider_file_id: str, chunk_size: int = 1024 * 1024):
+    """
+    Generator that streams a file from Google Drive in chunks.
+    Yields bytes.
+    """
+    request = drive.files().get_media(fileId=provider_file_id)
+    buffer = io.BytesIO()
+    downloader = MediaIoBaseDownload(buffer, request, chunksize=chunk_size)
+
+    done = False
+    while not done:
+        status, done = downloader.next_chunk()
+        buffer.seek(0)
+        data = buffer.read()
+        if data:
+            yield data
+        buffer.truncate(0)
+        buffer.seek(0)

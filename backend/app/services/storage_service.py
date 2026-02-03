@@ -6,7 +6,7 @@ from app.models.trip_member import TripMember
 from app.models.virtual_file import VirtualFile
 from app.models.file_chunk import FileChunk
 from app.models.user_cloud_account import UserCloudAccount
-from app.services.google_drive_service import get_drive_client, ensure_app_folder, upload_chunk_to_drive
+from app.services.google_drive_service import get_drive_client, ensure_app_folder, upload_chunk_to_drive, download_chunk_from_drive
 
 
 # =========================
@@ -327,3 +327,56 @@ def upload_real_file_to_google_drive(
 
       db.commit()
       
+
+    #   Download Chunk from drive
+
+def stream_virtual_file_from_drive(
+    *,
+    db: Session,
+    virtual_file_id: str,
+):
+    """
+    Generator that streams reconstructed file bytes
+    from Google Drive chunks in correct order.
+    """
+
+    virtual_file = db.get(VirtualFile, virtual_file_id)
+    if not virtual_file:
+        raise FileNotFoundError("Virtual file not found")
+
+    chunks = (
+        db.execute(
+            select(FileChunk)
+            .where(FileChunk.virtual_file_id == virtual_file_id)
+            .order_by(FileChunk.offset_bytes)
+        )
+        .scalars()
+        .all()
+    )
+
+    if not chunks:
+        raise FileNotFoundError("No chunks found for file")
+
+    for chunk in chunks:
+        account = (
+            db.query(UserCloudAccount)
+            .filter(
+                UserCloudAccount.user_id == chunk.owner_user_id,
+                UserCloudAccount.provider == "google_drive",
+            )
+            .first()
+        )
+
+        if not account or not chunk.provider_file_id:
+            raise Exception(
+                f"Chunk owner {chunk.owner_user_id} not linked to Google Drive"
+            )
+
+        drive = get_drive_client(account)
+
+        # Stream this chunk from Drive
+        for data in download_chunk_from_drive(
+            drive,
+            provider_file_id=chunk.provider_file_id,
+        ):
+            yield data

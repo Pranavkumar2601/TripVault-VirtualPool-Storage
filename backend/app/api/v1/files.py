@@ -13,9 +13,8 @@ from app.services.storage_service import (
 )
 
 from fastapi.responses import StreamingResponse
-from app.services.storage_service import iter_virtual_file_bytes
-from app.services.storage_service import upload_chunks_to_google_drive
-from app.services.storage_service import upload_real_file_to_google_drive
+from app.services.storage_service import iter_virtual_file_bytes,upload_chunks_to_google_drive, upload_real_file_to_google_drive, stream_virtual_file_from_drive
+
 
 
 router = APIRouter(prefix="/files", tags=["files"])
@@ -209,3 +208,27 @@ def upload_and_strore_file(
         "virtual_file_id": virtual_file.id,
         "size_bytes": file_size,
     }
+
+# =========================
+# Download Endpoint
+# =========================
+
+@router.get("/{virtual_file_id}/download")
+def download_file(
+    virtual_file_id: str,
+    db: Session = Depends(get_db),
+):
+    virtual_file_id = virtual_file_id.strip()
+
+    stream = stream_virtual_file_from_drive(
+        db=db,
+        virtual_file_id=virtual_file_id,
+    )
+
+    return StreamingResponse(
+        stream,
+        media_type="application/octet-stream",
+        headers={
+            "Content-Disposition": f'attachment; filename="{virtual_file_id}"'
+        },
+    )
