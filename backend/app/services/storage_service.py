@@ -268,64 +268,65 @@ def upload_chunks_to_google_drive(
 # Real Bytes Upload
 
 def upload_real_file_to_google_drive(
-        db: Session,
-        Virtual_file_id: str,
-        file_stream,
+    *,
+    db: Session,
+    virtual_file_id: str,
+    file_stream,
 ):
-      """
-    Streams real file bytes and uploads them chunk-by-chunk
-    to respective users' Google Drives.
-    """
-      
-      Virtual_file = db.get(VirtualFile, Virtual_file_id)
-      if not Virtual_file:
-          raise FileNotFoundError("Virtual file not found")
-      
-      chunks = (
-          db.execute(
-              select(FileChunk)
-              .where(FileChunk.virtual_file_id == Virtual_file_id)
-              .order_by(FileChunk.offset_bytes)
+    virtual_file = db.get(VirtualFile, virtual_file_id)
+    virtual_file.status = "uploading"
+    db.commit()
 
-          ).scalars()
-          .all()
-      )
+    uploaded = 0
 
-      for chunk in chunks:
-          account = (
-              db.query(UserCloudAccount)
-              .filter(
-                  UserCloudAccount.user_id == chunk.owner_user_id,
-                  UserCloudAccount.provider == "goodle_drive",
-              )
-              .first()
-          )
+    try:
+        chunks = (
+            db.execute(
+                select(FileChunk)
+                .where(FileChunk.virtual_file_id == virtual_file_id)
+                .order_by(FileChunk.offset_bytes)
+            )
+            .scalars()
+            .all()
+        )
 
-          if not account:
-              raise Exception(f"User {chunk.owner_user_id} has no Google Drive linked")
-          
-          drive = get_drive_client(account)
-          folder_id = ensure_app_folder(drive)
+        for chunk in chunks:
+            account = (
+                db.query(UserCloudAccount)
+                .filter(
+                    UserCloudAccount.user_id == chunk.owner_user_id,
+                    UserCloudAccount.provider == "google_drive",
+                )
+                .first()
+            )
 
-        #   Read Exact bytes for this chunk
+            drive = get_drive_client(account)
+            folder_id = ensure_app_folder(drive)
 
-          data = file_stream.read(chunk.size_bytes)
-      
-          if len(data) != chunk.size_bytes:
-              raise Exception("Failed to read enough bytes for chunk")
-          
-          chunk_name= f"chunk_{Virtual_file.id}_{chunk.offset_bytes}.bin"
+            data = file_stream.read(chunk.size_bytes)
 
-          provider_file_id = upload_chunk_to_drive(
-              drive,
-              folder_id=folder_id,
-              chunk_name=chunk_name,
-              data=data,
-          )
-          chunk.provider = "google_drive"
-          chunk.provider_file_id = provider_file_id
+            provider_file_id = upload_chunk_to_drive(
+                drive,
+                folder_id=folder_id,
+                chunk_name=f"chunk_{virtual_file.id}_{chunk.offset_bytes}.bin",
+                data=data,
+            )
 
-      db.commit()
+            chunk.provider = "google_drive"
+            chunk.provider_file_id = provider_file_id
+
+            uploaded += chunk.size_bytes
+            virtual_file.uploaded_bytes = uploaded
+            db.commit()
+
+        virtual_file.status = "completed"
+        db.commit()
+
+    except Exception as e:
+        virtual_file.status = "failed"
+        db.commit()
+        raise e
+
       
 
     #   Download Chunk from drive

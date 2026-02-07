@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
-from fastapi import UploadFile, File
+from fastapi import UploadFile, File, BackgroundTasks
+from fastapi.responses import StreamingResponse
 import os
 
 from app.core.database import get_db
@@ -12,9 +13,8 @@ from app.services.storage_service import (
     FileNotFoundError,
 )
 
-from fastapi.responses import StreamingResponse
 from app.services.storage_service import iter_virtual_file_bytes,upload_chunks_to_google_drive, upload_real_file_to_google_drive, stream_virtual_file_from_drive
-
+from app.core.auth import get_current_user
 
 
 router = APIRouter(prefix="/files", tags=["files"])
@@ -168,46 +168,50 @@ def upload_file_real(
 # Google Drive Upload API for real file
 # =======================
 @router.post("/upload-and-store")
-def upload_and_strore_file(
+def upload_and_store_file(
+    background_tasks: BackgroundTasks,
     trip_id: str = Query(...),
-    user_id: str =Query(...),
-    file: UploadFile = File(...),
-    db:Session= Depends(get_db)
+    user_id: str = Query(...),
+    # file: UploadFile = File(...),
+    current_user : User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    # Calculate file size
-    file_size =0
-    chunk_size = 1024 * 1024  # 1 MB
+    # 1. Calculate size
+    file_size = 0
+    chunk_size = 1024 * 1024
 
     while True:
-        chunk =file.file.read(chunk_size)
+        chunk = file.file.read(chunk_size)
         if not chunk:
             break
         file_size += len(chunk)
 
     file.file.seek(0)
 
-    # creaate metadata + chunk plan
+    # 2. Create metadata + chunks
     virtual_file = create_virtual_file_with_chunks(
-        db =db,
-        trip_id =trip_id,
-        uploader_user_id=user_id,
+        db=db,
+        trip_id=trip_id,
+        uploader_user_id=current_user.id,
         path=file.filename,
         file_size=file_size,
         checksum=None,
     )
 
-    # uplodad to google drive
-    upload_real_file_to_google_drive(
-        db=db,
-        Virtual_file_id= virtual_file.id,
-        file_stream=file.file,
+    # 3. Background upload
+    background_tasks.add_task(
+        upload_real_file_to_google_drive,
+        db,
+        virtual_file.id,
+        file.file,
     )
 
-    return{
-        "message": "File  uploaded and stored to Google Drive successfully",
+    return {
+        "message": "Upload started",
         "virtual_file_id": virtual_file.id,
-        "size_bytes": file_size,
+        "status": "uploading",
     }
+
 
 # =========================
 # Download Endpoint
@@ -232,3 +236,31 @@ def download_file(
             "Content-Disposition": f'attachment; filename="{virtual_file_id}"'
         },
     )
+
+
+# =========================
+# Status Endpoint
+# =========================
+
+@router.get("/{virtual_file_id}/status")
+def  get_file_status(
+    virtual_file_id:str,
+    db: Session = Depends(get_db),
+):
+    vf = db.get(VirtualFile, virtual_file_id.strip())
+    if not vf:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    progress =(
+        int((vf.uploaded_bytes / vf.size_bytes) * 100)
+        if vf.size_bytes and vf.uploaded_bytes is not None
+        else 0
+    )
+
+    return{
+        "virtual_file_id": vf.id,
+        "status": vf.status,
+        "uploaded_bytes": vf.uploaded_bytes,
+        "size_bytes": vf.size_bytes,
+        "progress_percent":progress,
+    }   

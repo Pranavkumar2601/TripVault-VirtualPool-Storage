@@ -48,6 +48,10 @@ class VirtualFile(Base):
         default=datetime.utcnow,
         nullable=False
     )
+    
+     # to track
+    status = Column(String, default="pending") # pending, uploading, completed, failed
+    uploaded_bytes = Column(BigInteger, default=0)
 
     # relationships
     chunks = relationship(
@@ -55,3 +59,5 @@ class VirtualFile(Base):
         back_populates="virtual_file",
         cascade="all, delete-orphan"
     )
+
+   

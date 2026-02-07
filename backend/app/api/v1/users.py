@@ -25,4 +25,3 @@ def list_users(db: Session = Depends(get_db)):
     return db.query(User).all()
 
 
-hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhbbbbbbbbbbbbbbbbbbhbhvgvgvgvgvgvg
