@@ -1,182 +1,36 @@
-from fastapi import APIRouter, Depends, Query, HTTPException
-from sqlalchemy.orm import Session
-from fastapi import UploadFile, File, BackgroundTasks
+from fastapi import APIRouter, Depends, Query, HTTPException, UploadFile, File, BackgroundTasks
 from fastapi.responses import StreamingResponse
-import os
+from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.schemas.file_upload import FileUploadRequest
+from app.core.auth import get_current_user
+from app.models.user import User
+from app.models.virtual_file import VirtualFile
+
 from app.services.storage_service import (
     create_virtual_file_with_chunks,
     delete_virtual_file,
+    upload_real_file_to_google_drive,
+    stream_virtual_file_from_drive,
     InsufficientStorageError,
     FileNotFoundError,
 )
-
-from app.services.storage_service import iter_virtual_file_bytes,upload_chunks_to_google_drive, upload_real_file_to_google_drive, stream_virtual_file_from_drive
-from app.core.auth import get_current_user
-
 
 router = APIRouter(prefix="/files", tags=["files"])
 
 
 # =========================
-# Upload API
+# Upload + Store (REAL, background)
 # =========================
 
-@router.post("")
-def upload_file(
-    payload: FileUploadRequest,
-    trip_id: str = Query(..., description="Trip ID"),
-    user_id: str = Query(..., description="Uploader User ID"),
-    db: Session = Depends(get_db),
-):
-    try:
-        virtual_file = create_virtual_file_with_chunks(
-            db=db,
-            trip_id=trip_id,
-            uploader_user_id=user_id,
-            path=payload.path,
-            file_size=payload.size_bytes,
-            checksum=payload.checksum,
-        )
-        return {
-            "id": virtual_file.id,
-            "path": virtual_file.path,
-            "size_bytes": virtual_file.size_bytes,
-        }
-
-    except InsufficientStorageError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-# =========================
-# Delete API
-# =========================
-
-@router.delete("/{virtual_file_id}")
-def delete_file(
-    virtual_file_id: str,
-    db: Session = Depends(get_db),
-):
-    virtual_file_id = virtual_file_id.strip()  # sanitize input
-
-    try:
-        delete_virtual_file(
-            db=db,
-            virtual_file_id=virtual_file_id,
-        )
-        return {"message": "File deleted successfully"}
-
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
-# =========================
-# Download API
-# =========================
-
-@router.get("/{virtual_file_id}/download")
-def download_file(
-    virtual_file_id: str,
-    db: Session = Depends(get_db),
-):
-    virtual_file_id = virtual_file_id.strip()
-
-    try:
-        byte_iterator = iter_virtual_file_bytes(
-            db=db,
-            virtual_file_id=virtual_file_id,
-        )
-
-        return StreamingResponse(
-            byte_iterator,
-            media_type="application/octet-stream",
-        )
-
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
-
-
-# =========================
-# Google Drive Upload API
-# =======================
-@router.post("/{virtual_file_id}/upload_to_drive")
-def upload_file_to_drive(
-    virtual_file_id:str,
-    db:Session =Depends(get_db),
-
-):
-    Virtual_file_id = virtual_file_id.strip()
-
-    upload_chunks_to_google_drive(
-        db=db,
-        virtual_file_id=virtual_file_id,
-    )
-
-    return {"message":"File uploaded to Google Drive successfully"}
-
-
-# Upload real file
-
-@router.post("/upload")
-def upload_file_real(
-    trip_id: str = Query(...,description="Trip ID"),
-    user_id: str =Query(...,description="Uploader User ID"),
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db),
-):
-    
-    """
-    Accepts a real file via multipart/form-data.
-    Streaming-safe: does not load entire file into memory.
-    """
-
-    # Determine File size(streaming)
-
-    file_size =0
-    chunk_size = 1024 * 1024  # 1 MB
-    
-    while True:
-        chunk = file.file.read(chunk_size)
-        if not chunk:
-            break
-        file_size += len(chunk)
-
-    # Reset file pointter so we can read again
-    file.file.seek(0)
-
-    # Use existing alloocation logic (metadata only)
-    virtual_file = create_virtual_file_with_chunks(
-        db=db,
-        trip_id=trip_id,
-        uploader_user_id= user_id,
-        path = file.filename,
-        file_size =file_size,
-        checksum = None,
-    )
-
-    return{
-        "message": "File accepted successfully",
-        "virtual_file_id": virtual_file.id,
-        "filename": file.filename,
-        "size_bytes": file_size,
-    }
-
-
-# =========================
-# Google Drive Upload API for real file
-# =======================
 @router.post("/upload-and-store")
 def upload_and_store_file(
     background_tasks: BackgroundTasks,
     trip_id: str = Query(...),
-    user_id: str = Query(...),
-    # file: UploadFile = File(...),
-    current_user : User = Depends(get_current_user),
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    # 1. Calculate size
     file_size = 0
     chunk_size = 1024 * 1024
 
@@ -188,7 +42,6 @@ def upload_and_store_file(
 
     file.file.seek(0)
 
-    # 2. Create metadata + chunks
     virtual_file = create_virtual_file_with_chunks(
         db=db,
         trip_id=trip_id,
@@ -198,7 +51,6 @@ def upload_and_store_file(
         checksum=None,
     )
 
-    # 3. Background upload
     background_tasks.add_task(
         upload_real_file_to_google_drive,
         db,
@@ -214,19 +66,18 @@ def upload_and_store_file(
 
 
 # =========================
-# Download Endpoint
+# Download (REAL reconstruction)
 # =========================
 
 @router.get("/{virtual_file_id}/download")
 def download_file(
     virtual_file_id: str,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    virtual_file_id = virtual_file_id.strip()
-
     stream = stream_virtual_file_from_drive(
         db=db,
-        virtual_file_id=virtual_file_id,
+        virtual_file_id=virtual_file_id.strip(),
     )
 
     return StreamingResponse(
@@ -239,28 +90,50 @@ def download_file(
 
 
 # =========================
-# Status Endpoint
+# Status
 # =========================
 
 @router.get("/{virtual_file_id}/status")
-def  get_file_status(
-    virtual_file_id:str,
+def get_file_status(
+    virtual_file_id: str,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     vf = db.get(VirtualFile, virtual_file_id.strip())
     if not vf:
         raise HTTPException(status_code=404, detail="File not found")
 
-    progress =(
+    progress = (
         int((vf.uploaded_bytes / vf.size_bytes) * 100)
         if vf.size_bytes and vf.uploaded_bytes is not None
         else 0
     )
 
-    return{
+    return {
         "virtual_file_id": vf.id,
         "status": vf.status,
         "uploaded_bytes": vf.uploaded_bytes,
         "size_bytes": vf.size_bytes,
-        "progress_percent":progress,
-    }   
+        "progress_percent": progress,
+    }
+
+
+# =========================
+# Delete
+# =========================
+
+@router.delete("/{virtual_file_id}")
+def delete_file(
+    virtual_file_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        delete_virtual_file(
+            db=db,
+            virtual_file_id=virtual_file_id.strip(),
+        )
+        return {"message": "File deleted successfully"}
+
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
