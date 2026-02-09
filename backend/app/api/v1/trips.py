@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -7,6 +7,7 @@ from app.core.auth import get_current_user
 from app.models.user import User
 from app.models.trip import Trip
 from app.models.trip_member import TripMember
+from app.models.user_cloud_account import UserCloudAccount
 from app.schemas.trip import TripCreate, TripRead
 from app.schemas.trip_invite import TripInviteRequest
 
@@ -22,7 +23,10 @@ def create_trip(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    trip = Trip(name=payload.name, created_by=current_user.id)
+    trip = Trip(
+        name=payload.name,
+        created_by=current_user.id,
+    )
     db.add(trip)
     db.flush()
 
@@ -67,22 +71,36 @@ def invite_member(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    admin = (
+    inviter = (
         db.query(TripMember)
-        .filter_by(
-            trip_id=trip_id,
-            user_id=current_user.id,
-            role="ADMIN",
+        .filter(
+            TripMember.trip_id == trip_id,
+            TripMember.user_id == current_user.id,
+            TripMember.role == "ADMIN",
         )
         .first()
     )
-    if not admin:
-        raise HTTPException(403, "Only ADMIN can invite")
 
-    if db.query(TripMember).filter_by(
-        trip_id=trip_id, user_id=payload.user_id
-    ).first():
-        raise HTTPException(400, "User already a member")
+    if not inviter:
+        raise HTTPException(
+            status_code=403,
+            detail="Only ADMIN can invite members",
+        )
+
+    invitee = db.get(User, payload.user_id)
+    if not invitee:
+        raise HTTPException(404, "User not found")
+
+    existing = (
+        db.query(TripMember)
+        .filter(
+            TripMember.trip_id == trip_id,
+            TripMember.user_id == payload.user_id,
+        )
+        .first()
+    )
+    if existing:
+        raise HTTPException(400, "User already a trip member")
 
     db.add(
         TripMember(
@@ -95,34 +113,59 @@ def invite_member(
     )
     db.commit()
 
-    return {"message": "User invited"}
+    return {"message": "User invited successfully"}
 
 
 # -------------------------
-# Set MY quota
+# Set MY quota (self-managed)
 # -------------------------
 @router.patch("/{trip_id}/me/quota")
 def update_my_quota(
     trip_id: str,
-    allocated_bytes: int,
+    allocated_bytes: int = Query(..., gt=0),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     member = (
         db.query(TripMember)
-        .filter_by(trip_id=trip_id, user_id=current_user.id)
+        .filter(
+            TripMember.trip_id == trip_id,
+            TripMember.user_id == current_user.id,
+        )
         .first()
     )
+
     if not member:
-        raise HTTPException(403, "Not a trip member")
+        raise HTTPException(404, "Not a trip member")
+
+    account = (
+        db.query(UserCloudAccount)
+        .filter(
+            UserCloudAccount.user_id == current_user.id,
+            UserCloudAccount.provider == "google_drive",
+        )
+        .first()
+    )
+
+    if not account:
+        raise HTTPException(
+            status_code=400,
+            detail="Link Google Drive before contributing storage",
+        )
 
     if allocated_bytes < member.used_bytes:
-        raise HTTPException(400, "Allocated < used")
+        raise HTTPException(
+            status_code=400,
+            detail="Allocated bytes cannot be less than used bytes",
+        )
 
     member.allocated_bytes = allocated_bytes
     db.commit()
 
-    return {"allocated_bytes": member.allocated_bytes}
+    return {
+        "trip_id": trip_id,
+        "allocated_bytes": allocated_bytes,
+    }
 
 
 # -------------------------
@@ -136,9 +179,13 @@ def leave_trip(
 ):
     member = (
         db.query(TripMember)
-        .filter_by(trip_id=trip_id, user_id=current_user.id)
+        .filter(
+            TripMember.trip_id == trip_id,
+            TripMember.user_id == current_user.id,
+        )
         .first()
     )
+
     if not member:
         raise HTTPException(403, "Not a member")
 
@@ -148,9 +195,13 @@ def leave_trip(
     if member.role == "ADMIN":
         admin_count = (
             db.query(func.count(TripMember.id))
-            .filter_by(trip_id=trip_id, role="ADMIN")
+            .filter(
+                TripMember.trip_id == trip_id,
+                TripMember.role == "ADMIN",
+            )
             .scalar()
         )
+
         if admin_count <= 1:
             raise HTTPException(400, "Cannot leave as last admin")
 

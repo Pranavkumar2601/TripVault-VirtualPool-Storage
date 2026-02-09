@@ -1,6 +1,6 @@
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaInMemoryUpload, MediaIoBaseDownload
+from googleapiclient.http import MediaInMemoryUpload, MediaIoBaseDownload, MediaIoBaseUpload
 
 from app.models.user_cloud_account import UserCloudAccount
 
@@ -57,29 +57,33 @@ def ensure_app_folder(drive):
 
 def upload_chunk_to_drive(
     drive,
-    *,
     folder_id: str,
     chunk_name: str,
     data: bytes,
 ):
-    media = MediaInMemoryUpload(
-        data,
+    media = MediaIoBaseUpload(
+        io.BytesIO(data),
         mimetype="application/octet-stream",
-        resumable=False,
+        resumable=True,              # ✅ KEY FIX
+        chunksize=1024 * 1024 * 10,  # 10 MB per request
     )
 
-    file_metadata = {
-        "name": chunk_name,
-        "parents": [folder_id],
-    }
-
-    file = drive.files().create(
-        body=file_metadata,
+    request = drive.files().create(
+        body={
+            "name": chunk_name,
+            "parents": [folder_id],
+        },
         media_body=media,
         fields="id",
-    ).execute()
+    )
 
-    return file["id"]
+    response = None
+    while response is None:
+        status, response = request.next_chunk()
+        if status:
+            print(f"Uploading {chunk_name}: {int(status.progress() * 100)}%")
+
+    return response["id"]
 
 def download_chunk_from_drive(drive, provider_file_id: str, chunk_size: int = 1024 * 1024):
     """
