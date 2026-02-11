@@ -1,26 +1,34 @@
 "use client";
 
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useState, useEffect } from "react";
 
-type AuthContextType = {
-  user: any;
-  setUser: (u: any) => void;
-};
-
-const AuthContext = createContext<AuthContextType | null>(null);
+const AuthContext = createContext<any>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<any>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("userId");
+    if (saved) setUserId(saved);
+  }, []);
+
+  function login(id: string) {
+    localStorage.setItem("userId", id);
+    setUserId(id);
+  }
+
+  function logout() {
+    localStorage.removeItem("userId");
+    setUserId(null);
+  }
 
   return (
-    <AuthContext.Provider value={{ user, setUser }}>
+    <AuthContext.Provider value={{ userId, login, logout }}>
       {children}
     </AuthContext.Provider>
   );
 }
 
 export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used inside AuthProvider");
-  return ctx;
+  return useContext(AuthContext);
 }
