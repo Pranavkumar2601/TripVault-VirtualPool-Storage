@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, Query, HTTPException, UploadFile, File, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import select
+
 
 from app.core.database import get_db
 from app.core.auth import get_current_user
@@ -32,7 +34,7 @@ def upload_and_store_file(
     db: Session = Depends(get_db),
 ):
     file_size = 0
-    chunk_size = 1024 * 1024
+    chunk_size = 1024 * 1024 
 
     while True:
         chunk = file.file.read(chunk_size)
@@ -137,3 +139,36 @@ def delete_file(
 
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+
+@router.get("")
+def list_files(
+    trip_id: str = Query(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    files = (
+        db.execute(
+            select(VirtualFile)
+            .where(VirtualFile.trip_id == trip_id)
+            .order_by(VirtualFile.created_at.desc())
+        )
+        .scalars()
+        .all()
+    )
+
+    return [
+        {
+            "id": f.id,
+            "path": f.path,
+            "status": f.status,
+            "uploaded_bytes": f.uploaded_bytes,
+            "size_bytes": f.size_bytes,
+            "progress_percent": (
+                int((f.uploaded_bytes / f.size_bytes) * 100)
+                if f.size_bytes > 0 else 0
+            ),
+        }
+        for f in files
+    ]

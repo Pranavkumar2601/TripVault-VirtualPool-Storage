@@ -4,19 +4,20 @@ from googleapiclient.http import MediaInMemoryUpload, MediaIoBaseDownload, Media
 
 from app.models.user_cloud_account import UserCloudAccount
 
-import io
+import io   
 
 def get_drive_client(account: UserCloudAccount):
     creds = Credentials(
         token=account.access_token,
         refresh_token=account.refresh_token,
-        token_uri="https://oauth2.googleapis.com/token",
-        client_id=None,       # handled internally
-        client_secret=None,
+        token_uri=account.token_uri,
+        client_id=account.client_id,
+        client_secret=account.client_secret,
         scopes=["https://www.googleapis.com/auth/drive.appdata"],
     )
 
     return build("drive", "v3", credentials=creds)
+
 
 
 # To create app folder in Google Drive AppData
