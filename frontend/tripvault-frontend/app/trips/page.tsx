@@ -1,54 +1,98 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
-import { apiFetch } from "@/lib/api";
-import { useAuth } from "@/lib/auth";
+import { api } from "@/lib/api";
 import { useRouter } from "next/navigation";
 
+type Trip = {
+  id: string;
+  name: string;
+  created_by: string;
+};
+
 export default function TripsPage() {
-  const { userId } = useAuth();
-  const router = useRouter();
-  const [trips, setTrips] = useState<any[]>([]);
+  const [trips, setTrips] = useState<Trip[]>([]);
   const [name, setName] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const router = useRouter();
+
+  const loadTrips = async () => {
+    try {
+      const data = await api.get<Trip[]>("/trips");
+      setTrips(data);
+    } catch (err: any) {
+      setError(err.message || "Failed to load trips");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
+    const userId = localStorage.getItem("tv_user_id");
     if (!userId) {
-      router.push("/login");
+      router.push("/");
       return;
     }
 
-    apiFetch("/trips").then(setTrips);
-  }, [userId]);
+    loadTrips();
+  }, []);
 
-  async function createTrip() {
-    const trip = await apiFetch("/trips", {
-      method: "POST",
-      body: JSON.stringify({ name }),
-    });
+  const createTrip = async () => {
+    if (!name.trim()) return;
 
-    // 🔥 IMPORTANT: redirect to trip page
-    router.push(`/trips/${trip.id}`);
+    try {
+      await api.post("/trips", { name });
+      setName("");
+      loadTrips();
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  if (loading) {
+    return <div className="p-8">Loading trips...</div>;
+  }
+
+  if (error) {
+    return <div className="p-8 text-red-600">Error: {error}</div>;
   }
 
   return (
-    <div>
-      <h2>My Trips</h2>
+    <div className="p-8 max-w-3xl mx-auto">
+      <h1 className="text-2xl font-bold mb-6">My Trips</h1>
 
-      <input
-        placeholder="Trip name"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-      />
-      <button onClick={createTrip}>Create Trip</button>
+      <div className="flex gap-2 mb-6">
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Trip name"
+          className="border px-3 py-2 rounded w-full"
+        />
+        <button
+          onClick={createTrip}
+          className="bg-black text-white px-4 rounded"
+        >
+          Create
+        </button>
+      </div>
 
-      <ul>
-        {trips.map((t) => (
-          <li key={t.id}>
-            <Link href={`/trips/${t.id}`}>{t.name}</Link>
-          </li>
+      <div className="space-y-3">
+        {trips.map((trip) => (
+          <div
+            key={trip.id}
+            className="border p-4 rounded cursor-pointer hover:bg-gray-50"
+            onClick={() => router.push(`/trips/${trip.id}`)}
+          >
+            {trip.name}
+          </div>
         ))}
-      </ul>
+
+        {trips.length === 0 && (
+          <div className="text-sm text-gray-500">No trips yet.</div>
+        )}
+      </div>
     </div>
   );
 }
